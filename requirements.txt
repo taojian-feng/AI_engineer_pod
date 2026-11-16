@@ -1,0 +1,7 @@
+anthropic==2.9.0
+langgraph==1.2.22
+fastapi==0.163.1
+uvicorn==0.54.0
+pydantic==2.14.3
+httpx==0.28.1
+azure-identity==1.27.0

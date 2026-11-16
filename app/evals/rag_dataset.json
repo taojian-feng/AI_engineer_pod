@@ -1,0 +1,18 @@
+[
+  {"id": "r1", "question": "What approval do I need for a $32,000 purchase order?", "sources": ["procurement_policy.md"], "must_include": [["category manager"]], "answerable": true},
+  {"id": "r2", "question": "How many quotes do I need for a PO above $50,000, and who approves it?", "sources": ["procurement_policy.md"], "must_include": [["three", "3"], ["director"]], "answerable": true},
+  {"id": "r3", "question": "What is the hotel cap per night in San Francisco?", "sources": ["travel_expense_policy.md"], "must_include": [["325"]], "answerable": true},
+  {"id": "r4", "question": "What is the domestic meal per diem, and how much applies on the first day of travel?", "sources": ["travel_expense_policy.md"], "must_include": [["75"], ["75%", "56.25", "three quarters"]], "answerable": true},
+  {"id": "r5", "question": "I have 7 years of service. How many PTO days do I get per year?", "sources": ["pto_policy.md"], "must_include": [["20"]], "answerable": true},
+  {"id": "r6", "question": "How many unused PTO days can I carry into next year?", "sources": ["pto_policy.md"], "must_include": [["5", "five"]], "answerable": true},
+  {"id": "r7", "question": "How much safety stock must critical spares hold?", "sources": ["inventory_management.md"], "must_include": [["14 days", "14"]], "answerable": true},
+  {"id": "r8", "question": "How often are class A items cycle counted, and what variance triggers a recount?", "sources": ["inventory_management.md"], "must_include": [["monthly"], ["2%"]], "answerable": true},
+  {"id": "r9", "question": "When does a supplier get put on probation?", "sources": ["supplier_quality.md"], "must_include": [["85%"], ["4%"]], "answerable": true},
+  {"id": "r10", "question": "What certification do valve suppliers need?", "sources": ["supplier_quality.md"], "must_include": [["api q1"]], "answerable": true},
+  {"id": "r11", "question": "What is the three-way match price tolerance for supplier invoices?", "sources": ["month_end_close.md"], "must_include": [["2%"], ["$500", "500"]], "answerable": true},
+  {"id": "r12", "question": "By which business day must month-end close be completed?", "sources": ["month_end_close.md"], "must_include": [["5", "bd5", "five"]], "answerable": true},
+  {"id": "r13", "question": "Can an AI agent issue a $15,000 PO without a human approval?", "sources": ["procurement_policy.md"], "must_include": [["category manager"]], "answerable": true},
+  {"id": "u1", "question": "How many weeks of paid parental leave does Meridian offer?", "sources": [], "must_include": [], "answerable": false},
+  {"id": "u2", "question": "What is the company 401(k) match percentage?", "sources": [], "must_include": [], "answerable": false},
+  {"id": "u3", "question": "What is the per diem for travel to Mars?", "sources": [], "must_include": [], "answerable": false}
+]
