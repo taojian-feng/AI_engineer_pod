@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pod Simulator</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div id="login" class="overlay hidden">
+  <form id="login-form" class="card login-card">
+    <h1>Pod Simulator</h1>
+    <p class="muted">Practice for an enterprise AI Engineer role in a realistic simulated AI pod.</p>
+    <label>Your name <input name="name" maxlength="60" placeholder="Optional"></label>
+    <label id="code-label">Access code <input name="code" type="password" autocomplete="off"></label>
+    <button type="submit" class="primary">Start session</button>
+    <p id="login-error" class="error"></p>
+  </form>
+</div>
+
+<header class="topbar">
+  <button id="menu-btn" class="ghost" aria-label="Menu">☰</button>
+  <div class="brand">Pod Simulator <span class="muted">· Meridian Basin Energy Services</span></div>
+  <div id="usage" class="usage"></div>
+</header>
+
+<div class="layout">
+  <nav id="nav">
+    <a data-view="home" class="active">Briefing</a>
+    <a data-view="company">Company data</a>
+    <div class="nav-group">Build labs</div>
+    <a data-view="rag">RAG lab</a>
+    <a data-view="agent">Agent lab</a>
+    <a data-view="coding">Coding lab</a>
+    <div class="nav-group">Interview practice</div>
+    <a data-view="interview">Mock interview</a>
+    <a data-view="stakeholder">Stakeholder role-play</a>
+    <a data-view="review">Code review</a>
+    <div class="nav-group">Ops</div>
+    <a data-view="traces">Traces</a>
+  </nav>
+
+  <main>
+    <!-- HOME -->
+    <section id="view-home" class="view">
+      <h1>Welcome to the pod</h1>
+      <p class="lead">You have just joined an AI pod (a Lead AI Engineer and two AI Engineers) at <b>Meridian Basin Energy Services</b>, a fictional oilfield services company. The business wants agentic AI for Supply Chain, Finance and HR. Everything here is live: real LLM calls, a real LangGraph agent, real evals and real traces.</p>
+      <div class="grid2">
+        <div class="card">
+          <h3>What each module practices</h3>
+          <table class="tbl">
+            <tr><th>Module</th><th>Job description requirement</th></tr>
+            <tr><td>RAG lab</td><td>Build RAG: ingestion, retrieval, orchestration, response generation. Measure accuracy and hallucination rate.</td></tr>
+            <tr><td>Agent lab</td><td>Agents with tool calling, memory, multi-step reasoning and decision logic (LangGraph). Reliability and trust.</td></tr>
+            <tr><td>Coding lab</td><td>Strong Python fundamentals, with hidden tests run in an isolated sandbox.</td></tr>
+            <tr><td>Mock interview</td><td>Explain what you built, why, and how trust, accuracy and reliability were established.</td></tr>
+            <tr><td>Stakeholder role-play</td><td>Partner with business stakeholders to find automation opportunities.</td></tr>
+            <tr><td>Code review</td><td>Production readiness, evaluation rigour and security judgement.</td></tr>
+            <tr><td>Traces</td><td>Monitoring and observability for AI systems.</td></tr>
+          </table>
+        </div>
+        <div class="card">
+          <h3>Suggested 90-minute loop</h3>
+          <ol>
+            <li>Skim the <a data-goto="company">company data</a> and policies (5 min).</li>
+            <li><a data-goto="rag">RAG lab</a>: run the baseline eval, find why it hallucinates, and fix it (20 min).</li>
+            <li><a data-goto="agent">Agent lab</a>: the procurement agent breaks policy. Make all 6 scenarios pass (25 min).</li>
+            <li><a data-goto="coding">Coding lab</a>: one exercise (15 min).</li>
+            <li><a data-goto="interview">Mock interview</a>: explain what you just changed and why (15 min).</li>
+            <li><a data-goto="stakeholder">Stakeholder role-play</a> (10 min).</li>
+          </ol>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Your attempts</h3>
+        <div id="attempts"><p class="muted">No attempts yet.</p></div>
+      </div>
+    </section>
+
+    <!-- COMPANY -->
+    <section id="view-company" class="view hidden">
+      <h1>Company data</h1>
+      <p class="muted">This is the system of record your agent works against, plus the policy corpus your RAG system indexes. All of it is fictional.</p>
+      <div class="tabs" id="company-tabs"></div>
+      <div id="company-body" class="card"></div>
+    </section>
+
+    <!-- RAG -->
+    <section id="view-rag" class="view hidden">
+      <h1>RAG lab: policy assistant</h1>
+      <p class="lead">Employees ask the policy assistant about procurement, travel, PTO, inventory, supplier quality and close procedures. The prototype config below came from a hackathon. <b>Run the eval, diagnose the failures, tune the system, and get the score up without raising the hallucination rate.</b></p>
+      <div class="grid2">
+        <div class="card">
+          <h3>Pipeline config</h3>
+          <div class="form-row">
+            <label>Chunk size (words) <input type="number" id="rag-chunk_size" min="20" max="2000"></label>
+            <label>Overlap <input type="number" id="rag-chunk_overlap" min="0" max="500"></label>
+          </div>
+          <div class="form-row">
+            <label>Top-k <input type="number" id="rag-top_k" min="1" max="10"></label>
+            <label>Min BM25 score <input type="number" step="0.5" id="rag-min_score" min="0"></label>
+          </div>
+          <label class="check"><input type="checkbox" id="rag-split_on_headings"> Split on section headings</label>
+          <label>System prompt <textarea id="rag-system_prompt" rows="7"></textarea></label>
+          <div class="btns">
+            <button id="rag-reset" class="ghost">Reset to baseline</button>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Try it</h3>
+          <div class="inline">
+            <input id="rag-q" placeholder="e.g. What approval do I need for a $32,000 PO?">
+            <button id="rag-ask" class="primary">Ask</button>
+          </div>
+          <div id="rag-answer"></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="row-between">
+          <h3>Evaluation suite <span class="muted small">(16 cases: 13 answerable, 3 unanswerable)</span></h3>
+          <div class="btns">
+            <label class="check small"><input type="checkbox" id="rag-judge" checked> LLM judge for groundedness</label>
+            <button id="rag-eval" class="primary">Run eval</button>
+          </div>
+        </div>
+        <div id="rag-eval-out"></div>
+      </div>
+    </section>
+
+    <!-- AGENT -->
+    <section id="view-agent" class="view hidden">
+      <h1>Agent lab: procurement agent</h1>
+      <p class="lead">Buyers want an agent that checks stock, picks suppliers and raises purchase orders in the ERP. The prototype is fast, but it breaks <a data-goto="company">procurement policy</a>. <b>Improve the system prompt, tool descriptions and guardrails until all scenarios pass.</b> Tool implementations are fixed, like a real ERP API.</p>
+      <div class="grid2">
+        <div class="card">
+          <h3>Agent config</h3>
+          <label>System prompt <textarea id="agent-system_prompt" rows="8"></textarea></label>
+          <div class="form-row">
+            <label>Max steps <input type="number" id="agent-max_steps" min="1" max="25"></label>
+            <label>Memory turns <input type="number" id="agent-memory_turns" min="1" max="30"></label>
+          </div>
+          <details><summary>Tool descriptions (what the model sees)</summary><div id="agent-tools"></div></details>
+          <div class="btns"><button id="agent-reset" class="ghost">Reset to baseline</button></div>
+        </div>
+        <div class="card chat-card">
+          <div class="row-between"><h3>Chat with the agent</h3><button id="agent-new" class="ghost small">New conversation</button></div>
+          <div id="agent-chat" class="chat"></div>
+          <div class="inline">
+            <input id="agent-msg" placeholder="e.g. Which critical spares are below reorder point?">
+            <button id="agent-send" class="primary">Send</button>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="row-between">
+          <h3>Scenario evals <span class="muted small">(checks the ERP end state and the trajectory, not just the text)</span></h3>
+          <button id="agent-eval" class="primary">Run all scenarios</button>
+        </div>
+        <div id="agent-scenarios"></div>
+        <div id="agent-eval-out"></div>
+      </div>
+    </section>
+
+    <!-- CODING -->
+    <section id="view-coding" class="view hidden">
+      <h1>Coding lab</h1>
+      <p class="lead">Timed Python exercises from the pod's daily work. Your code runs in an isolated sandbox against hidden tests.</p>
+      <div class="tabs" id="coding-tabs"></div>
+      <div class="grid2">
+        <div class="card"><div id="coding-prompt" class="md"></div></div>
+        <div class="card">
+          <textarea id="coding-code" class="code" spellcheck="false" rows="22"></textarea>
+          <div class="btns">
+            <button id="coding-reset" class="ghost">Reset starter</button>
+            <label class="check small"><input type="checkbox" id="coding-fb"> Ask a senior engineer for feedback</label>
+            <button id="coding-run" class="primary">Run hidden tests</button>
+          </div>
+          <div id="coding-out"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- INTERVIEW -->
+    <section id="view-interview" class="view hidden">
+      <h1>Mock interview</h1>
+      <p class="lead">A Claude interviewer plays the Lead AI Engineer. It probes for specifics, trade-offs and evidence the way a real panel does, then scores you against a rubric.</p>
+      <div class="card">
+        <div class="form-row">
+          <label>Track <select id="iv-track"></select></label>
+          <label class="check"><input type="checkbox" id="iv-coach"> Coach mode (tips after each answer)</label>
+          <button id="iv-start" class="primary">Start interview</button>
+        </div>
+        <p id="iv-jd" class="muted small"></p>
+      </div>
+      <div class="card chat-card"><div id="iv-chat" class="chat"></div>
+        <div class="inline"><textarea id="iv-msg" rows="3" placeholder="Your answer… (Ctrl+Enter to send)"></textarea>
+          <div class="col"><button id="iv-send" class="primary">Send</button><button id="iv-finish" class="ghost">Finish &amp; score</button></div></div>
+      </div>
+      <div id="iv-score"></div>
+    </section>
+
+    <!-- STAKEHOLDER -->
+    <section id="view-stakeholder" class="view hidden">
+      <h1>Stakeholder role-play</h1>
+      <p class="lead">Discovery meeting with a business owner. They know things that decide whether your solution works, but they only share them if you ask the right questions.</p>
+      <div class="card">
+        <div class="form-row">
+          <label>Stakeholder <select id="sh-persona"></select></label>
+          <button id="sh-start" class="primary">Walk into the meeting</button>
+        </div>
+        <p id="sh-desc" class="muted small"></p>
+      </div>
+      <div class="card chat-card"><div id="sh-chat" class="chat"></div>
+        <div class="inline"><textarea id="sh-msg" rows="3" placeholder="Ask a question… (Ctrl+Enter to send)"></textarea>
+          <div class="col"><button id="sh-send" class="primary">Send</button><button id="sh-finish" class="ghost">End meeting &amp; score</button></div></div>
+      </div>
+      <div id="sh-score"></div>
+    </section>
+
+    <!-- REVIEW -->
+    <section id="view-review" class="view hidden">
+      <h1>Code review</h1>
+      <p class="lead">A teammate's PR is waiting for you. Find what would hurt in production, and say how to fix it.</p>
+      <div class="tabs" id="review-tabs"></div>
+      <div class="grid2">
+        <div class="card"><p id="review-context"></p><pre id="review-code" class="codeblock"></pre></div>
+        <div class="card">
+          <textarea id="review-text" rows="16" placeholder="Write your review: issues, why they matter, and fixes."></textarea>
+          <div class="btns"><button id="review-grade" class="primary">Submit review</button></div>
+          <div id="review-out"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TRACES -->
+    <section id="view-traces" class="view hidden">
+      <h1>Traces</h1>
+      <p class="lead">Every LLM call, retrieval, tool call, graph node and sandbox run is recorded with latency and tokens. Use this view to debug your labs, the way you would use LangSmith, MLflow or Arize.</p>
+      <div class="grid2">
+        <div class="card"><div class="row-between"><h3>Recent traces</h3><button id="traces-refresh" class="ghost small">Refresh</button></div><div id="traces-list"></div></div>
+        <div class="card"><h3>Spans</h3><div id="trace-detail" class="muted">Pick a trace.</div></div>
+      </div>
+    </section>
+  </main>
+</div>
+<div id="toast" class="toast hidden"></div>
+<script src="/static/app.js"></script>
+</body>
+</html>
