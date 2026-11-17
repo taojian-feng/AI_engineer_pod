@@ -54,24 +54,71 @@ The target is close to $0 when idle:
 * **No Log Analytics** and **no Azure Container Registry**: the image is built by
   GitHub Actions and pushed to GitHub Container Registry for free.
 
-Steps:
+### First deploy (Azure Cloud Shell)
 
-1. Merge to `main`. The `image` workflow pushes `ghcr.io/<owner>/ai_engineer_pod:latest`.
-   Either make the package public (it contains no secrets) or pass
-   `GHCR_USER`/`GHCR_TOKEN` (a PAT with `read:packages`) to the deploy script.
-2. From a shell logged in with `az login`:
+The easiest place to run the script is **Azure Cloud Shell** (Bash) in the Azure
+portal. It is already signed in with `az`, so you can skip `az login`.
+
+1. Merge to `main`. The `image` workflow pushes `ghcr.io/<owner>/ai_engineer_pod`
+   tagged with both `latest` and the commit SHA. Either make the package public
+   (it contains no secrets) or pass `GHCR_USER`/`GHCR_TOKEN` (a PAT with
+   `read:packages`) to the deploy script.
+2. In Cloud Shell, get the code:
+
+   ```bash
+   git clone https://github.com/<owner>/AI_engineer_pod.git
+   cd AI_engineer_pod
+   chmod +x infra/deploy.sh infra/teardown.sh
+   ```
+
+3. Deploy:
 
    ```bash
    export ANTHROPIC_API_KEY=sk-ant-...      # never commit this
-   export ACCESS_CODE=pick-a-shared-code    # applicants type this to get in
-   export IMAGE=ghcr.io/<owner>/ai_engineer_pod:latest
+   export ACCESS_CODE=pick-a-password       # see below
+   export IMAGE=ghcr.io/<owner>/ai_engineer_pod:$(git rev-parse HEAD)
    ./infra/deploy.sh
    ```
 
-   The script creates the resource group, environment, session pool and app.
-   It stores the key and access code as **Container App secrets** and grants the
-   app's **managed identity** permission to run code in the pool only.
-3. Delete everything later with `./infra/teardown.sh`.
+   **`ACCESS_CODE` is a password you make up.** Share it with your applicants;
+   they type it on the sign-in page to get in. Changing it later locks out anyone
+   who only has the old one.
+
+   The script creates the resource group, environment, session pool and app,
+   and prints the site URL at the end. It stores the key and access code as
+   **Container App secrets** and grants the app's **managed identity**
+   permission to run code in the pool only.
+
+4. Open the site and sign in. Look at the top-right status bar: it shows the
+   model and your token usage. **If it says `offline demo mode`, the API key did
+   not reach the app** (the app falls back to canned replies). Re-run step 3 with
+   `ANTHROPIC_API_KEY` set. Any other Claude problem (a rejected key, a wrong
+   `MODEL`, a rate limit) now shows as a red error inside the chat, saying what to fix.
+
+### Redeploy after a change
+
+1. Merge the pull request into `main`.
+2. Wait for the **image** workflow to finish (GitHub, **Actions** tab, green tick
+   on the merge commit). The new image only exists after this.
+3. In Cloud Shell:
+
+   ```bash
+   cd AI_engineer_pod
+   git pull
+   export ANTHROPIC_API_KEY=sk-ant-...      # the script needs both every time
+   export ACCESS_CODE=your-existing-password
+   export IMAGE=ghcr.io/<owner>/ai_engineer_pod:$(git rev-parse HEAD)
+   ./infra/deploy.sh
+   ```
+
+   **Use the commit SHA tag, not `:latest`.** If the image name doesn't change,
+   Azure may keep the old revision running. `git rev-parse HEAD` after `git pull`
+   is the SHA of the merge commit the workflow just built.
+4. Hard-refresh the site (Ctrl+Shift+R) so the browser loads the new JavaScript.
+
+### Tear down
+
+`./infra/teardown.sh` deletes everything the deploy created.
 
 ### Protecting your Claude key and budget
 
