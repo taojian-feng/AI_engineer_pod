@@ -62,6 +62,7 @@ button:disabled { opacity: .55; cursor: wait; }
 .msg.user { align-self: flex-end; background: var(--accent); color: var(--accent-ink); }
 .msg.bot { align-self: flex-start; background: var(--chip); }
 .msg.tool { align-self: flex-start; font-size: .8rem; font-family: ui-monospace, monospace; background: transparent; border: 1px dashed var(--border); color: var(--muted); }
+.msg.err { align-self: stretch; max-width: none; font-size: .88rem; color: var(--bad); background: transparent; border: 1px solid currentColor; }
 .msg.sys { align-self: center; font-size: .82rem; color: var(--muted); }
 .ctx { font-size: .82rem; border-left: 3px solid var(--border); padding: 4px 10px; margin: 6px 0; color: var(--muted); }
 .big-score { font-size: 2.2rem; font-weight: 700; }

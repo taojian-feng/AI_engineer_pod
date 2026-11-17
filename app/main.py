@@ -50,6 +50,17 @@ async def _nosandbox(_, e):
     return JSONResponse({"detail": str(e)}, status_code=503)
 
 
+@app.exception_handler(llm.LLMError)
+async def _llm_error(_, e):
+    return JSONResponse({"detail": str(e)}, status_code=e.status)
+
+
+@app.exception_handler(Exception)
+async def _unexpected(_, e):
+    # Always answer JSON so the page can show the reason instead of a bare "Request failed (500)".
+    return JSONResponse({"detail": f"Server error: {type(e).__name__}: {e}"[:500]}, status_code=500)
+
+
 @app.exception_handler(KeyError)
 async def _notfound(_, e):
     return JSONResponse({"detail": str(e).strip("'\"")}, status_code=404)

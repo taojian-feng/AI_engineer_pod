@@ -45,6 +45,10 @@ class ReviewGrade(BaseModel):
 
 _STORE: dict[str, dict] = {}
 
+# Room for the model's thinking plus a short reply. The prompts keep replies short; a small cap here
+# can be used up by thinking and leave no visible text.
+TURN_TOKENS = 8000
+
 
 def _interviewer_system(track: dict, coach: bool) -> str:
     return f"""You are a Lead AI Engineer interviewing a candidate for an AI Engineer role. {COMPANY}
@@ -68,7 +72,7 @@ def start_interview(track_id: str, coach: bool = False) -> dict:
     sid = uuid.uuid4().hex[:12]
     system = _interviewer_system(track, coach)
     msgs = [{"role": "user", "content": "(The candidate has joined the video call. Introduce yourself briefly and ask your first question.)"}]
-    r = llm.chat(system, msgs, max_tokens=1200, label="interview.turn")
+    r = llm.chat(system, msgs, max_tokens=TURN_TOKENS, label="interview.turn", require_text=True)
     msgs.append({"role": "assistant", "content": r.content})
     _STORE[sid] = {"kind": "interview", "track": track_id, "system": system, "messages": msgs}
     return {"id": sid, "message": r.text}
@@ -99,7 +103,12 @@ def reply(sid: str, text: str) -> dict:
     if not st:
         raise KeyError("Conversation not found (the server may have restarted). Start a new one.")
     st["messages"].append({"role": "user", "content": text[:6000]})
-    r = llm.chat(st["system"], st["messages"], max_tokens=1200, label=f"{st['kind']}.turn")
+    try:
+        r = llm.chat(st["system"], st["messages"], max_tokens=TURN_TOKENS, label=f"{st['kind']}.turn",
+                     require_text=True)
+    except Exception:
+        st["messages"].pop()  # keep the history valid so the candidate can resend
+        raise
     st["messages"].append({"role": "assistant", "content": r.content})
     return {"message": r.text}
 
@@ -160,4 +169,4 @@ def coding_feedback(exercise: dict, code: str, result: dict) -> str:
     msg = (f"EXERCISE:\n{exercise['prompt']}\n\nCANDIDATE CODE:\n```python\n{code[:8000]}\n```\n\n"
            f"TEST RESULTS: {result['passed']}/{result['total']} passed. Failures: "
            + "; ".join(f"{t['name']}: {t['error']}" for t in result["tests"] if not t["passed"])[:3000])
-    return llm.chat(system, [{"role": "user", "content": msg}], max_tokens=1500, label="coding.feedback").text
+    return llm.chat(system, [{"role": "user", "content": msg}], max_tokens=TURN_TOKENS, label="coding.feedback").text

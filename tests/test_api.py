@@ -65,3 +65,48 @@ def test_budget_enforced(monkeypatch):
     monkeypatch.setenv("SESSION_TOKEN_BUDGET", "0")
     r = client.post("/api/rag/ask", json={"question": "What is the hotel cap per night?"})
     assert r.status_code == 429
+
+
+def test_interview_start_returns_first_question():
+    login()
+    llm.fake_script(llm.text_reply("Hi, I'm Sam. Tell me about an agent you shipped."))
+    s = client.post("/api/interview/start", json={"topic": "agents"}).json()
+    assert s["id"] and "agent you shipped" in s["message"]
+
+
+def test_empty_model_reply_is_an_error_not_a_blank_bubble():
+    login()
+    llm.fake_script(llm.Reply([{"type": "thinking", "thinking": "", "signature": "s"}], "", stop_reason="max_tokens"))
+    r = client.post("/api/interview/start", json={"topic": "agents"})
+    assert r.status_code == 502 and "empty reply" in r.json()["detail"]
+
+
+def test_claude_api_errors_explain_the_config_problem(monkeypatch):
+    import anthropic
+    import httpx2
+
+    from app.config import get_settings
+
+    login()
+    req = httpx2.Request("POST", "https://api.anthropic.com/v1/messages")
+
+    def boom(*_):
+        raise anthropic.AuthenticationError("invalid x-api-key", response=httpx2.Response(401, request=req), body=None)
+
+    monkeypatch.setattr(llm, "_real_chat", boom)
+    monkeypatch.setenv("LLM_PROVIDER", "anthropic")
+    assert get_settings().provider == "anthropic"
+    r = client.post("/api/interview/start", json={"topic": "agents"})
+    assert r.status_code == 502 and "ANTHROPIC_API_KEY" in r.json()["detail"]
+
+
+def test_reply_failure_keeps_history_valid(monkeypatch):
+    from app.interview import sessions
+
+    login()
+    s = client.post("/api/interview/start", json={"topic": "agents"}).json()
+    before = len(sessions._STORE[s["id"]]["messages"])
+    llm.fake_script(llm.text_reply(""))
+    r = client.post("/api/conversation/reply", json={"id": s["id"], "text": "answer"})
+    assert r.status_code == 502
+    assert len(sessions._STORE[s["id"]]["messages"]) == before
