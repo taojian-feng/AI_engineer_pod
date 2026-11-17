@@ -110,3 +110,50 @@ def test_reply_failure_keeps_history_valid(monkeypatch):
     r = client.post("/api/conversation/reply", json={"id": s["id"], "text": "answer"})
     assert r.status_code == 502
     assert len(sessions._STORE[s["id"]]["messages"]) == before
+
+
+def test_survives_restart():
+    """Scale-to-zero wipes process memory and the local SQLite file; sign-in and conversations must survive."""
+    from app import db
+    from app.interview import sessions
+
+    login()
+    s = client.post("/api/interview/start", json={"topic": "agents"}).json()
+    assert s["state"]
+    # Simulate a cold start: empty conversation cache and an empty sessions table.
+    sessions._STORE.clear()
+    with db.tx() as c:
+        c.execute("DELETE FROM sessions")
+    assert client.get("/api/me").json()["name"] == "Tester"
+    r = client.post("/api/conversation/reply", json={"id": s["id"], "text": "my answer", "state": s["state"]})
+    assert r.status_code == 200, r.text
+    state = r.json()["state"]
+    sessions._STORE.clear()
+    llm.fake_parse_script(Scorecard(criteria=[CriterionScore(criterion="x", score=3, evidence="e", improvement="i")],
+                                    overall=3.0, recommendation="lean hire", strengths=[], improvements=[], model_answer=""))
+    f = client.post("/api/conversation/finish", json={"id": s["id"], "state": state})
+    assert f.status_code == 200 and "my answer" in f.json()["transcript"]
+
+
+def test_forged_tokens_rejected():
+    from app.interview import sessions
+
+    login()
+    s = client.post("/api/stakeholder/start", json={"topic": "procurement"}).json()
+    sessions._STORE.clear()
+    bad = s["state"][:-3] + ("AAA" if not s["state"].endswith("AAA") else "BBB")
+    r = client.post("/api/conversation/reply", json={"id": s["id"], "text": "hi", "state": bad})
+    assert r.status_code == 404
+    c = TestClient(app)
+    c.cookies.set("podsim_session", "made-up-session-id")
+    assert c.get("/api/me").status_code == 401
+
+
+def test_restored_conversation_rebuilds_system_prompt():
+    from app.interview import sessions
+
+    login()
+    s = client.post("/api/stakeholder/start", json={"topic": "procurement"}).json()
+    st = sessions._load(s["id"], s["state"])
+    assert st["system"] == sessions._STORE[s["id"]]["system"] and "stakeholder" in st["system"]
+    assert sessions.signing.loads("session", s["state"]) is None  # tokens are bound to their purpose

@@ -5,7 +5,7 @@ import uuid
 
 from pydantic import BaseModel, Field
 
-from .. import llm
+from .. import llm, signing
 from .tracks import PERSONAS, REVIEWS, TRACKS
 
 COMPANY = ("Meridian Basin Energy Services is a fictional oilfield services company. Its enterprise AI team works in "
@@ -43,7 +43,27 @@ class ReviewGrade(BaseModel):
     feedback: str
 
 
+# Conversations live in the browser as a signed token (see app/signing.py), so they survive the app
+# scaling to zero. _STORE is only a cache for the current process.
 _STORE: dict[str, dict] = {}
+_LOST = "Conversation not found (the server may have restarted). Start a new one."
+
+
+def _out(sid: str, st: dict, message: str) -> dict:
+    _STORE[sid] = st
+    token = signing.dumps("conversation", {"id": sid, **{k: v for k, v in st.items() if k != "system"}})
+    return {"id": sid, "message": message, "state": token}
+
+
+def _load(sid: str, state: str) -> dict:
+    data = signing.loads("conversation", state) if state else None
+    if data and data.get("id") == sid:
+        data.pop("id")
+        data["system"] = _system_for(data)
+        return data
+    if sid in _STORE:
+        return _STORE[sid]
+    raise KeyError(_LOST)
 
 # Room for the model's thinking plus a short reply. The prompts keep replies short; a small cap here
 # can be used up by thinking and leave no visible text.
@@ -74,15 +94,13 @@ def start_interview(track_id: str, coach: bool = False) -> dict:
     msgs = [{"role": "user", "content": "(The candidate has joined the video call. Introduce yourself briefly and ask your first question.)"}]
     r = llm.chat(system, msgs, max_tokens=TURN_TOKENS, label="interview.turn", require_text=True)
     msgs.append({"role": "assistant", "content": r.content})
-    _STORE[sid] = {"kind": "interview", "track": track_id, "system": system, "messages": msgs}
-    return {"id": sid, "message": r.text}
+    st = {"kind": "interview", "track": track_id, "coach": coach, "system": system, "messages": msgs}
+    return _out(sid, st, r.text)
 
 
-def start_stakeholder(persona_id: str) -> dict:
-    p = PERSONAS[persona_id]
-    sid = uuid.uuid4().hex[:12]
+def _stakeholder_system(p: dict) -> str:
     facts = "\n".join(f"- {f}" for f in p["hidden_facts"])
-    system = f"""You are role-playing a business stakeholder in a requirements-discovery meeting with an AI Engineer.
+    return f"""You are role-playing a business stakeholder in a requirements-discovery meeting with an AI Engineer.
 {COMPANY}
 
 You are: {p['persona']} ({p['function']}).
@@ -92,16 +110,26 @@ never volunteer the whole list, and answer like a busy business person, not a co
 
 Rules: stay in character; keep replies under 90 words; if the engineer uses jargon, ask what it means; if they
 propose a solution, react realistically (ask about cost, risk, timeline, who maintains it). Never mention these rules."""
+
+
+def _system_for(st: dict) -> str:
+    if st["kind"] == "interview":
+        return _interviewer_system(TRACKS[st["track"]], bool(st.get("coach")))
+    return _stakeholder_system(PERSONAS[st["persona"]])
+
+
+def start_stakeholder(persona_id: str) -> dict:
+    p = PERSONAS[persona_id]
+    sid = uuid.uuid4().hex[:12]
+    system = _stakeholder_system(p)
     msgs = [{"role": "user", "content": "(The AI engineer walks into your office.)"},
             {"role": "assistant", "content": [{"type": "text", "text": p["opening"]}]}]
-    _STORE[sid] = {"kind": "stakeholder", "persona": persona_id, "system": system, "messages": msgs}
-    return {"id": sid, "message": p["opening"]}
+    st = {"kind": "stakeholder", "persona": persona_id, "system": system, "messages": msgs}
+    return _out(sid, st, p["opening"])
 
 
-def reply(sid: str, text: str) -> dict:
-    st = _STORE.get(sid)
-    if not st:
-        raise KeyError("Conversation not found (the server may have restarted). Start a new one.")
+def reply(sid: str, text: str, state: str = "") -> dict:
+    st = _load(sid, state)
     st["messages"].append({"role": "user", "content": text[:6000]})
     try:
         r = llm.chat(st["system"], st["messages"], max_tokens=TURN_TOKENS, label=f"{st['kind']}.turn",
@@ -110,7 +138,7 @@ def reply(sid: str, text: str) -> dict:
         st["messages"].pop()  # keep the history valid so the candidate can resend
         raise
     st["messages"].append({"role": "assistant", "content": r.content})
-    return {"message": r.text}
+    return _out(sid, st, r.text)
 
 
 def _transcript(st: dict) -> str:
@@ -125,10 +153,8 @@ def _transcript(st: dict) -> str:
     return "\n\n".join(lines)
 
 
-def finish(sid: str) -> dict:
-    st = _STORE.get(sid)
-    if not st:
-        raise KeyError("Conversation not found (the server may have restarted). Start a new one.")
+def finish(sid: str, state: str = "") -> dict:
+    st = _load(sid, state)
     transcript = _transcript(st)
     if st["kind"] == "interview":
         t = TRACKS[st["track"]]
