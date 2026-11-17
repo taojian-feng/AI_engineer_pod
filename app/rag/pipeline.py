@@ -46,7 +46,7 @@ def answer(question: str, cfg: RagConfig) -> dict:
     t0 = time.perf_counter()
     hits = retrieve(question, cfg)
     reply = llm.chat(cfg.system_prompt, [{"role": "user", "content": build_user_message(question, hits)}],
-                     max_tokens=1500, label="rag.generate")
+                     max_tokens=8000, label="rag.generate")
     return {
         "question": question,
         "answer": reply.text,

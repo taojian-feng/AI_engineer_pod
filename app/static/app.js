@@ -13,10 +13,13 @@ function toast(msg) { const t = $("#toast"); t.textContent = msg; t.classList.re
 async function api(path, body) {
   const r = await fetch(path, body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   if (r.status === 401 && !path.endsWith("/login")) { showLogin(); throw new Error("Please sign in."); }
-  const data = await r.json().catch(() => ({}));
+  const raw = await r.text().catch(() => "");
+  let data = {};
+  try { data = raw ? JSON.parse(raw) : {}; } catch { data = {}; }
   if (!r.ok) {
     const d = data.detail;
-    throw new Error(typeof d === "string" ? d : Array.isArray(d) ? d.map((x) => x.msg).join("; ") : "Request failed (" + r.status + ")");
+    const body = raw && raw.length < 300 && !raw.trim().startsWith("<") ? ": " + raw.trim() : "";
+    throw new Error(typeof d === "string" ? d : Array.isArray(d) ? d.map((x) => x.msg).join("; ") : "Request failed (HTTP " + r.status + ")" + body);
   }
   return data;
 }
@@ -256,26 +259,53 @@ onShow.stakeholder = async () => {
   $("#sh-persona").addEventListener("change", desc); desc();
 };
 
-function conversation(prefix, startPath, getTopic, extra) {
-  let convId = null;
+function conversation(prefix, startPath, getTopic, extra, labels) {
+  let convId = null, answered = false, starting = false;
   const box = $(`#${prefix}-chat`);
-  $(`#${prefix}-start`).addEventListener("click", (e) => busy(e.target, async () => {
+  const startBtn = $(`#${prefix}-start`);
+  const fail = (e) => chatAdd(box, "err", esc("Couldn't get a reply: " + e.message));
+  async function start() {
+    if (starting) return;
+    starting = true; startBtn.disabled = true; startBtn.classList.add("spinner");
+    convId = null; answered = false;
     box.innerHTML = ""; $(`#${prefix}-score`).innerHTML = "";
-    const r = await api(startPath, { topic: getTopic(), ...(extra ? extra() : {}) });
-    convId = r.id; chatAdd(box, "bot", esc(r.message));
-  }));
+    chatAdd(box, "sys", esc(labels.waiting));
+    try {
+      const r = await api(startPath, { topic: getTopic(), ...(extra ? extra() : {}) });
+      box.innerHTML = "";
+      convId = r.id; chatAdd(box, "bot", esc(r.message));
+      $(`#${prefix}-msg`).focus();
+    } catch (e) {
+      box.innerHTML = ""; fail(e);
+    } finally {
+      starting = false; startBtn.disabled = false; startBtn.classList.remove("spinner"); refreshUsage();
+    }
+  }
+  chatAdd(box, "sys", esc(labels.idle));
+  startBtn.addEventListener("click", start);
+  // Picking a topic starts the conversation, unless the candidate is mid-way through one.
+  $(`#${prefix}-${labels.select}`).addEventListener("change", () => {
+    if (answered) chatAdd(box, "sys", esc(labels.changed));
+    else start();
+  });
   $(`#${prefix}-send`).addEventListener("click", (e) => busy(e.target, async () => {
-    if (!convId) return toast("Start the conversation first.");
+    if (!convId) return toast(labels.notStarted);
     const text = $(`#${prefix}-msg`).value.trim(); if (!text) return;
     chatAdd(box, "user", esc(text)); $(`#${prefix}-msg`).value = "";
-    const r = await api("/api/conversation/reply", { id: convId, text });
-    chatAdd(box, "bot", esc(r.message));
+    try {
+      const r = await api("/api/conversation/reply", { id: convId, text });
+      answered = true; chatAdd(box, "bot", esc(r.message));
+    } catch (e) {
+      $(`#${prefix}-msg`).value = text; fail(e);
+    }
   }));
   $(`#${prefix}-msg`).addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) $(`#${prefix}-send`).click(); });
   $(`#${prefix}-finish`).addEventListener("click", (e) => busy(e.target, async () => {
-    if (!convId) return toast("Start the conversation first.");
-    const r = await api("/api/conversation/finish", { id: convId });
-    $(`#${prefix}-score`).innerHTML = scorecard(r.scorecard);
+    if (!convId) return toast(labels.notStarted);
+    try {
+      const r = await api("/api/conversation/finish", { id: convId });
+      $(`#${prefix}-score`).innerHTML = scorecard(r.scorecard);
+    } catch (e) { fail(e); }
   }));
 }
 function scorecard(s) {
@@ -288,8 +318,20 @@ function scorecard(s) {
     <div><h3>Improvements</h3><ul>${s.improvements.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></div></div>
     <h3>What a strong answer covers</h3><p style="white-space:pre-wrap">${esc(s.model_answer)}</p></div>`;
 }
-conversation("iv", "/api/interview/start", () => $("#iv-track").value, () => ({ coach: $("#iv-coach").checked }));
-conversation("sh", "/api/stakeholder/start", () => $("#sh-persona").value);
+conversation("iv", "/api/interview/start", () => $("#iv-track").value, () => ({ coach: $("#iv-coach").checked }), {
+  select: "track",
+  idle: "Pick a track (or click Start interview) and the interviewer will introduce themselves and ask the first question.",
+  waiting: "The interviewer is joining the call and preparing the first question…",
+  changed: "Track changed. Click Start interview to restart with the new track (this ends the current interview).",
+  notStarted: "Start the interview first.",
+});
+conversation("sh", "/api/stakeholder/start", () => $("#sh-persona").value, null, {
+  select: "persona",
+  idle: "Pick a stakeholder (or click Walk into the meeting) to begin.",
+  waiting: "Walking into the meeting…",
+  changed: "Stakeholder changed. Click Walk into the meeting to start over with them.",
+  notStarted: "Start the meeting first.",
+});
 
 // ------------------------------------------------------------------ Code review
 let currentReview = null;

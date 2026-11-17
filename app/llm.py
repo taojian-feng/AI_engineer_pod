@@ -27,6 +27,39 @@ class ModelRefused(RuntimeError):
     pass
 
 
+class LLMError(RuntimeError):
+    """Claude could not be reached or returned nothing usable. The message is shown to the user."""
+
+    def __init__(self, message: str, status: int = 502):
+        super().__init__(message)
+        self.status = status
+
+
+def _explain(e: Exception) -> LLMError:
+    """Turn an Anthropic SDK exception into a message that says what to fix."""
+    import anthropic
+
+    model = get_settings().model
+    detail = getattr(e, "message", None) or str(e)
+    if isinstance(e, anthropic.AuthenticationError):
+        return LLMError("Claude API rejected the API key (401). Check the ANTHROPIC_API_KEY secret on the server.")
+    if isinstance(e, anthropic.PermissionDeniedError):
+        return LLMError(f"The API key is not allowed to use model '{model}' (403): {detail}")
+    if isinstance(e, anthropic.NotFoundError):
+        return LLMError(f"Model '{model}' was not found (404). Check the MODEL setting on the server.")
+    if isinstance(e, anthropic.RateLimitError):
+        return LLMError("Claude API rate limit reached (429). Wait a minute and try again.", 429)
+    if isinstance(e, anthropic.BadRequestError):
+        return LLMError(f"Claude API rejected the request (400): {detail}")
+    if isinstance(e, anthropic.APITimeoutError):
+        return LLMError("Claude API timed out. Try again.", 504)
+    if isinstance(e, anthropic.APIConnectionError):
+        return LLMError("Could not connect to the Claude API from the server (network error).")
+    if isinstance(e, anthropic.APIStatusError):
+        return LLMError(f"Claude API error ({e.status_code}): {detail}")
+    return LLMError(f"Claude call failed: {type(e).__name__}: {detail}")
+
+
 @dataclass
 class Reply:
     content: list[dict]  # assistant content blocks, safe to append back to messages
@@ -186,19 +219,31 @@ def _fake_instance(schema: type[BaseModel]):
 
 # ---------------------------------------------------------------- public API
 
+def _call(fn, *args):
+    import anthropic
+
+    try:
+        return fn(*args)
+    except anthropic.AnthropicError as e:
+        raise _explain(e) from e
+
+
 def chat(system: str, messages: list, tools: list | None = None, max_tokens: int = 4096,
-         label: str = "chat") -> Reply:
+         label: str = "chat", require_text: bool = False) -> Reply:
     s = get_settings()
     _check_budget()
     with tracing.span("llm", label, {"system": system[:1500], "last_message": messages[-1] if messages else None,
                                      "tools": [t["name"] for t in tools or []]}) as sp:
         if s.provider == "anthropic":
-            r = _real_chat(system, messages, tools, max_tokens)
+            r = _call(_real_chat, system, messages, tools, max_tokens)
         else:
             r = _fake_chat(system, messages, tools, max_tokens)
         sp["output"] = {"text": r.text, "tool_uses": r.tool_uses, "stop_reason": r.stop_reason}
         sp["input_tokens"], sp["output_tokens"] = r.input_tokens, r.output_tokens
     _account(label, s.model, r.input_tokens, r.output_tokens)
+    if require_text and not r.text.strip():
+        # Thinking can use up max_tokens before any visible text is written.
+        raise LLMError(f"Claude returned an empty reply (stop_reason={r.stop_reason}). Try again.")
     return r
 
 
@@ -208,7 +253,7 @@ def parse(system: str, messages: list, schema: type[T], max_tokens: int = 4096,
     _check_budget()
     with tracing.span("llm", label, {"system": system[:1500], "schema": schema.__name__}) as sp:
         if s.provider == "anthropic":
-            obj, i, o = _real_parse(system, messages, schema, max_tokens)
+            obj, i, o = _call(_real_parse, system, messages, schema, max_tokens)
         else:
             obj, i, o = _fake_instance(schema), 0, 0
         sp["output"] = obj.model_dump()

@@ -54,7 +54,7 @@ def judge(question: str, contexts: list[dict], ans: str) -> Judgement:
     ctx = "\n\n".join(c["text"] for c in contexts) or "(no context retrieved)"
     msg = f"CONTEXT:\n{ctx}\n\nQUESTION: {question}\n\nANSWER: {ans}"
     try:
-        return llm.parse(JUDGE_SYSTEM, [{"role": "user", "content": msg}], Judgement, max_tokens=1500,
+        return llm.parse(JUDGE_SYSTEM, [{"role": "user", "content": msg}], Judgement, max_tokens=8000,
                          label="eval.judge")
     except llm.BudgetExceeded:
         raise
