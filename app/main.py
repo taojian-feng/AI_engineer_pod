@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import db, llm, tracing
+from . import db, llm, signing, tracing
 from .agent import graph as agent_graph
 from .agent.config import AgentConfig
 from .coding import exercises as coding_ex
@@ -28,6 +28,7 @@ from .rag.pipeline import RagConfig, answer
 
 STATIC = Path(__file__).parent / "static"
 COOKIE = "podsim_session"
+COOKIE_MAX_AGE = 7 * 24 * 3600
 
 app = FastAPI(title="Pod Simulator", version="1.0.0")
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
@@ -77,15 +78,21 @@ class Login(BaseModel):
 
 
 def _new_session(name: str) -> str:
+    """Create a session and return its signed cookie value.
+
+    The cookie carries the session id and display name, signed with a stable key, so a
+    sign-in stays valid when the app scales to zero and comes back with an empty database.
+    """
     sid = secrets.token_urlsafe(24)
+    name = name or "Applicant"
     with db.tx() as c:
-        c.execute("INSERT INTO sessions VALUES (?,?,?)", (sid, time.time(), name or "Applicant"))
-    return sid
+        c.execute("INSERT OR IGNORE INTO sessions VALUES (?,?,?)", (sid, time.time(), name))
+    return signing.dumps("session", {"sid": sid, "name": name, "iat": int(time.time())})
 
 
-def _set_cookie(resp: Response, request: Request, sid: str) -> None:
+def _set_cookie(resp: Response, request: Request, token: str) -> None:
     https = request.headers.get("x-forwarded-proto", request.url.scheme) == "https"
-    resp.set_cookie(COOKIE, sid, httponly=True, samesite="lax", secure=https, max_age=7 * 24 * 3600)
+    resp.set_cookie(COOKIE, token, httponly=True, samesite="lax", secure=https, max_age=COOKIE_MAX_AGE)
 
 
 @app.post("/api/login")
@@ -99,14 +106,19 @@ def login(body: Login, request: Request, response: Response):
     if s.access_code and not hmac.compare_digest(body.code.encode(), s.access_code.encode()):
         _login_failures[ip].append(time.time())
         raise HTTPException(401, "Wrong access code.")
-    sid = _new_session(body.name.strip())
-    _set_cookie(response, request, sid)
+    _set_cookie(response, request, _new_session(body.name.strip()))
     return {"ok": True}
 
 
 def session_id(request: Request) -> str:
-    sid = request.cookies.get(COOKIE)
-    if sid and db.conn().execute("SELECT 1 FROM sessions WHERE id=?", (sid,)).fetchone():
+    data = signing.loads("session", request.cookies.get(COOKIE) or "")
+    if data and time.time() - data.get("iat", 0) < COOKIE_MAX_AGE:
+        sid = data["sid"]
+        # The database may be fresh after a restart; recreate the row from the cookie.
+        if not db.conn().execute("SELECT 1 FROM sessions WHERE id=?", (sid,)).fetchone():
+            with db.tx() as c:
+                c.execute("INSERT OR IGNORE INTO sessions VALUES (?,?,?)",
+                          (sid, data.get("iat", time.time()), data.get("name") or "Applicant"))
         return sid
     raise HTTPException(401, "Please sign in with the access code.")
 
@@ -252,10 +264,12 @@ class Start(BaseModel):
 class Turn(BaseModel):
     id: str
     text: str = Field(min_length=1, max_length=6000)
+    state: str = Field("", max_length=2_000_000)  # signed transcript from the last response
 
 
 class Finish(BaseModel):
     id: str
+    state: str = Field("", max_length=2_000_000)
 
 
 class ReviewIn(BaseModel):
@@ -287,13 +301,13 @@ def sh_start(body: Start, sid: str = Depends(session_id)):
 @app.post("/api/conversation/reply")
 def conv_reply(body: Turn, sid: str = Depends(session_id)):
     begin(sid)
-    return iv.reply(body.id, body.text)
+    return iv.reply(body.id, body.text, body.state)
 
 
 @app.post("/api/conversation/finish")
 def conv_finish(body: Finish, sid: str = Depends(session_id)):
     begin(sid)
-    res = iv.finish(body.id)
+    res = iv.finish(body.id, body.state)
     card = res["scorecard"]
     db.save_attempt(sid, res["kind"], {"topic": res["topic"]}, {"recommendation": card.get("recommendation")},
                     round(float(card.get("overall") or 0) * 20, 1))

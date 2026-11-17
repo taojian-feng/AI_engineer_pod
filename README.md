@@ -144,10 +144,14 @@ portal. It is already signed in with `az`, so you can skip `az login`.
 | `AZURE_SESSION_POOL_ENDPOINT` | (none) | Pool management endpoint (set by deploy.sh) |
 | `SESSION_TOKEN_BUDGET` / `DAILY_TOKEN_BUDGET` | 400000 / 5000000 | Spend caps |
 | `DB_PATH` | `./podsim.db` | SQLite file for sessions, usage, traces and attempts |
+| `SESSION_SECRET` | derived from `ACCESS_CODE` + `ANTHROPIC_API_KEY` | Key that signs sign-in cookies and conversation tokens. Optional; changing it (or the access code) signs everyone out |
 
 ## Known limits (v1)
 
-* State lives in SQLite inside the container and in memory, so it resets when the
-  app scales to zero or redeploys. `max-replicas` is 1 for this reason.
-* Agent and interview conversations are kept in memory per replica.
+* Sign-ins and interview/stakeholder conversations survive scale-to-zero and redeploys:
+  they are kept in the browser as HMAC-signed tokens (`app/signing.py`), not on the server.
+* Usage counters, traces, attempt history and the agent lab's chat memory live in SQLite
+  inside the container and in memory, so they reset when the app scales to zero or
+  redeploys. That also resets the token budgets, so set a monthly spend limit in the
+  Anthropic console as the real backstop. `max-replicas` is 1 for this reason.
 * Grading uses an LLM judge for open-ended answers; scores are guidance, not a hiring decision.

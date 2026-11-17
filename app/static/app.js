@@ -260,20 +260,22 @@ onShow.stakeholder = async () => {
 };
 
 function conversation(prefix, startPath, getTopic, extra, labels) {
-  let convId = null, answered = false, starting = false;
+  // convState is the signed transcript the server hands back; sending it with each turn lets the
+  // conversation continue even after the server scaled to zero and lost its memory.
+  let convId = null, convState = "", answered = false, starting = false;
   const box = $(`#${prefix}-chat`);
   const startBtn = $(`#${prefix}-start`);
   const fail = (e) => chatAdd(box, "err", esc("Couldn't get a reply: " + e.message));
   async function start() {
     if (starting) return;
     starting = true; startBtn.disabled = true; startBtn.classList.add("spinner");
-    convId = null; answered = false;
+    convId = null; convState = ""; answered = false;
     box.innerHTML = ""; $(`#${prefix}-score`).innerHTML = "";
     chatAdd(box, "sys", esc(labels.waiting));
     try {
       const r = await api(startPath, { topic: getTopic(), ...(extra ? extra() : {}) });
       box.innerHTML = "";
-      convId = r.id; chatAdd(box, "bot", esc(r.message));
+      convId = r.id; convState = r.state || ""; chatAdd(box, "bot", esc(r.message));
       $(`#${prefix}-msg`).focus();
     } catch (e) {
       box.innerHTML = ""; fail(e);
@@ -293,7 +295,8 @@ function conversation(prefix, startPath, getTopic, extra, labels) {
     const text = $(`#${prefix}-msg`).value.trim(); if (!text) return;
     chatAdd(box, "user", esc(text)); $(`#${prefix}-msg`).value = "";
     try {
-      const r = await api("/api/conversation/reply", { id: convId, text });
+      const r = await api("/api/conversation/reply", { id: convId, text, state: convState });
+      if (r.state) convState = r.state;
       answered = true; chatAdd(box, "bot", esc(r.message));
     } catch (e) {
       $(`#${prefix}-msg`).value = text; fail(e);
@@ -303,7 +306,7 @@ function conversation(prefix, startPath, getTopic, extra, labels) {
   $(`#${prefix}-finish`).addEventListener("click", (e) => busy(e.target, async () => {
     if (!convId) return toast(labels.notStarted);
     try {
-      const r = await api("/api/conversation/finish", { id: convId });
+      const r = await api("/api/conversation/finish", { id: convId, state: convState });
       $(`#${prefix}-score`).innerHTML = scorecard(r.scorecard);
     } catch (e) { fail(e); }
   }));
